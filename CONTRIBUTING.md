@@ -6,33 +6,32 @@ to keep it that way — easy to read, easy to self-host.
 ## Project layout
 
 ```
-frontend/  React + Vite app (src/views, src/components, src/store, src/lib). Builds to static files.
-           android/ + ios/ are the Capacitor shells for the standalone mobile app (docs/MOBILE.md).
-api/       backend — server.js (Node, no framework), one dependency (@simplewebauthn/server).
-web/       multi-stage Dockerfile (builds frontend → nginx) + nginx.conf (serves app, proxies /api).
-media/     exercise img/gif (gitignored, fetched at runtime).
-docs/      self-hosting guide.
+frontend/       React + Vite app (src/views, src/components, src/store, src/lib). Builds to static files.
+                android/ + ios/ are the Capacitor shells for the standalone mobile app (docs/MOBILE.md).
+firestore.rules access control for the Firestore database — the only backend piece left.
+docs/           Firebase setup guide.
 ```
+
+There's no backend of openGym's own anymore — the app talks straight to a Firebase project
+(Auth + Firestore) you configure. Exercise images/GIFs are pulled from a CDN mirror of the
+source dataset (`frontend/src/lib/exercises.js`), not bundled or self-hosted.
 
 ## Running for development
 
 ```bash
-cp .env.example .env
-docker compose up -d --build      # api + web + media on :8080
-# frontend hot reload:
+cp .env.example .env       # paste your own Firebase project's config in — see docs/FIREBASE_SETUP.md
 cd frontend && npm install && npm run dev
 # training logic (progression rules, 1RM, how a session is read back):
-cd frontend && npm test
+npm test
 ```
 
 ## Guidelines
 
-- **Keep it dependency-light.** The frontend uses React + Router + Zustand and nothing else;
-  new deps (front or back) are a hard sell. `api/` has two (`@simplewebauthn/server` for passkeys,
-  `web-push` for notifications) — keep it near that.
+- **Keep it dependency-light.** The frontend uses React + Router + Zustand + the Firebase client
+  SDK and nothing else — new deps are a hard sell.
 - **Match the style.** Small components, clear names, comments only where the "why" isn't obvious.
   State lives in the Zustand store (`src/store`); pure helpers in `src/lib`.
-- **Don't commit** the exercise media (`media/`) or `data/` — they're gitignored.
+- **Don't commit** your own `.env` — it's gitignored; `.env.example` is the template.
 - **Test the flow** you touched — click through the affected screens (and the workout flow) in a
   browser before opening a PR.
 - **Training logic gets a unit test.** Anything deciding what you lift next, or reading a logged

@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "opengym-6f1ed"
-  }
+  },
+  "targets": {
+    "opengym-6f1ed": {
+      "hosting": {
+        "myopengym": [
+          "myopengym"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

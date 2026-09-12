@@ -26,11 +26,13 @@ export function registerCustom(list) {
 // Full searchable catalogue — customs first so your own exercises are easy to find.
 export const allExercises = st => [...(st.customEx || []), ...EXDB]
 
-// Media normally sits next to the app (img/ and gif/, mounted into the web container).
-// A build can point them somewhere else — the demo build pulls them off a CDN instead of
-// shipping ~140 MB of images into the deployment.
-const IMG_BASE = import.meta.env.VITE_IMG_BASE || 'img/'
-const GIF_BASE = import.meta.env.VITE_GIF_BASE || 'gif/'
+// There's no backend of our own to serve ~140 MB of exercise media from (Firebase Hosting's
+// free bandwidth quota would burn through fast on that too), so it's pulled from a CDN mirror
+// of the source dataset by default. VITE_IMG_BASE/VITE_GIF_BASE can still override this if you
+// ever want to self-host the media instead (see media/ + scripts/fetch-media.sh).
+const CDN = 'https://cdn.jsdelivr.net/gh/hasaneyldrm/exercises-dataset@7455efae41b330c265e7cd4b78dfa848e7ce5ebd/'
+const IMG_BASE = import.meta.env.VITE_IMG_BASE || CDN + 'images/'
+const GIF_BASE = import.meta.env.VITE_GIF_BASE || CDN + 'videos/'
 export const imgSrc = ex => IMG_BASE + ex.img
 export const gifSrc = ex => GIF_BASE + ex.gif
 
