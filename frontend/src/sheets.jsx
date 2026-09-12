@@ -275,26 +275,27 @@ async function searchFood(q) {
 
 function FoodSearch({ onPick }) {
   const [q, setQ] = useState('')
-  const [results, setResults] = useState([])
+  const [results, setResults] = useState(null)   // null = not searched yet, [] = searched, nothing found
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(false)
   const go = async () => {
     if (!q.trim()) return
     setBusy(true); setErr(false)
     try { setResults(await searchFood(q.trim())) }
-    catch (e) { setErr(true); setResults([]) }
+    catch (e) { console.error('food search failed', e); setErr(true); setResults(null) }
     setBusy(false)
   }
   return <>
     <div className="row" style={{ gap: 8 }}>
       <div style={{ flex: 1 }}>
-        <SearchField value={q} onChange={e => setQ(e.target.value)} onClear={() => { setQ(''); setResults([]) }}
+        <SearchField value={q} onChange={e => setQ(e.target.value)} onClear={() => { setQ(''); setResults(null) }}
           placeholder={t('Search a food (per 100g)')} onKeyDown={e => e.key === 'Enter' && go()} />
       </div>
-      <Button onClick={go} disabled={busy}>{t('Search')}</Button>
+      <Button onClick={go} disabled={busy}>{busy ? t('Searching…') : t('Search')}</Button>
     </div>
     {err && <div className="small dim" style={{ marginTop: 8 }}>{t('Search failed — check your connection, or enter it manually.')}</div>}
-    {results.length > 0 && <div className="list" style={{ gap: 0, marginTop: 10 }}>
+    {results && results.length === 0 && !err && <div className="small dim" style={{ marginTop: 8 }}>{t('No matches — try fewer or different words, or enter it manually.')}</div>}
+    {results && results.length > 0 && <div className="list" style={{ gap: 0, marginTop: 10 }}>
       {results.map((f, i) => (
         <button key={i} className="lrow tap" onClick={() => onPick(f)}>
           <span className="lrow-m"><span className="lrow-t">{f.name}</span>
@@ -314,7 +315,23 @@ function FoodSheet({ close }) {
   const [protein, setProtein] = useState(null)
   const [carbs, setCarbs] = useState(null)
   const [fat, setFat] = useState(null)
-  const pick = f => { setName(f.name); setKcal(f.kcal); setProtein(f.protein); setCarbs(f.carbs); setFat(f.fat); setMode('manual') }
+  // A search result is per 100g of that product — picking it does not mean you ate 100g of it.
+  // per100 is the reference the grams stepper scales from; the four fields above stay the
+  // editable, final numbers (so a manual nudge afterwards works exactly like manual entry).
+  const [per100, setPer100] = useState(null)
+  const [grams, setGrams] = useState(100)
+  const pick = f => {
+    setName(f.name); setPer100(f); setGrams(100)
+    setKcal(f.kcal); setProtein(f.protein); setCarbs(f.carbs); setFat(f.fat)
+    setMode('manual')
+  }
+  const setGramsEaten = g => {
+    setGrams(g)
+    if (!per100) return
+    const factor = g / 100
+    setKcal(Math.round(per100.kcal * factor)); setProtein(Math.round(per100.protein * factor))
+    setCarbs(Math.round(per100.carbs * factor)); setFat(Math.round(per100.fat * factor))
+  }
   const save = () => {
     const n = name.trim()
     if (!n) { toast(t('Enter a name')); return }
@@ -335,6 +352,14 @@ function FoodSheet({ close }) {
     {mode === 'manual' && <div style={{ marginTop: 10 }}>
       <input className="input" placeholder={t('Food name')} maxLength={60} value={name} onChange={e => setName(e.target.value)} />
       <div style={{ height: 10 }} />
+      {per100 && <>
+        <div className="row" style={{ gap: 8 }}>
+          <Stepper label={t('Grams eaten')} value={grams} onChange={setGramsEaten} step={10} decimal={false} unit="g" />
+        </div>
+        <div className="small dim" style={{ marginTop: 4, marginBottom: 8 }}>
+          {t('Per 100g: {0} kcal · {1}P {2}C {3}F — the numbers below are for {4}g.', per100.kcal, per100.protein, per100.carbs, per100.fat, grams)}
+        </div>
+      </>}
       <div className="row" style={{ gap: 8 }}>
         <Stepper label={t('Kcal')} value={kcal} onChange={setKcal} step={10} decimal={false} />
       </div>
