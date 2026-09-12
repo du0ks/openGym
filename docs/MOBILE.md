@@ -2,13 +2,13 @@
 
 openGym ships in two flavors from the same codebase:
 
-| | **Self-hosted** (this repo's default) | **Mobile app** (`VITE_MOBILE=1`) |
+| | **Web app** (this repo's default) | **Mobile app** (`VITE_MOBILE=1`) |
 |---|---|---|
-| Runs | in any browser, against your own server | natively on iPhone / Android (Capacitor shell) |
-| Accounts | passkey sign-in, one profile per person | none — the phone *is* the account |
-| Data | synced to your server, readable on desktop | stays on the device (file in the app's private storage) |
-| Reminders | Web Push from your server | native local notifications, no server involved |
-| Exercise media | served by your server (`img/`, `gif/`) | loaded from the jsDelivr CDN |
+| Runs | in any browser, against your own Firebase project | natively on iPhone / Android (Capacitor shell) |
+| Accounts | email/password, one account per person | none — the phone *is* the account |
+| Data | synced to Firestore, readable on desktop | stays on the device (file in the app's private storage) |
+| Reminders | none yet (see the README roadmap) | native local notifications, no server involved |
+| Exercise media | served from Firebase Hosting (`img/`, `gif/`) | loaded from the jsDelivr CDN |
 
 The mobile flavor never talks to a backend: no sign-in screen, no sync, no telemetry.
 State is mirrored from `localStorage` into `opengym-state.json` in the app's private data
@@ -85,8 +85,8 @@ apksigner sign --ks my.keystore --ks-key-alias opengym --out openGym.apk aligned
 Apple does not allow installing apps outside the App Store, so there is no `.ipa` download
 that would simply install. Your free options:
 
-- **Self-host + PWA** (recommended): open your instance in Safari → Share → *Add to Home
-  Screen*. Full-screen app, no expiry, plus sync and passkeys.
+- **Deploy the web app + PWA** (recommended): open your deployed instance in Safari → Share →
+  *Add to Home Screen*. Full-screen app, no expiry, plus sync and accounts.
 - **Xcode free signing:** open `ios/` in Xcode with a free Apple ID as the team and run it
   onto your own iPhone. Apple expires the signature after 7 days; re-run from Xcode to renew.
 - **AltStore:** automates that 7-day re-signing over Wi-Fi via a Mac companion app.

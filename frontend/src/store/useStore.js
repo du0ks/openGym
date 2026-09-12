@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import { api } from '../lib/api.js'
+import { onAuthStateChanged, signOut as fbSignOut } from 'firebase/auth'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { auth, db } from '../lib/firebase.js'
 import { localTZ } from '../lib/format.js'
 import { registerCustom } from '../lib/exercises.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
@@ -15,7 +17,11 @@ export const DEF = {
   // that a profile which never chose (loaded state is overlaid on DEF, on every path: local,
   // server pull, backup import) still falls back to the `showRir` boolean this replaced and
   // keeps the column it had. See effortOf.
-  reminder: { on: false, time: '08:00', tz: null }, effort: null
+  reminder: { on: false, time: '08:00', tz: null }, effort: null,
+  // Calorie/macro tracking. foodLog is an array of many entries per day (like workouts), not
+  // an upsert-by-day value (like bodyweight) — several meals can be logged on the same date.
+  // targets are nullable scalars, same pattern as targetW.
+  foodLog: [], targetKcal: null, targetProtein: null, targetCarbs: null, targetFat: null
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 
@@ -101,15 +107,22 @@ export const useStore = create((set, get) => {
       set({ user: u })
     },
 
+    // One document per user, holding the same JSON blob as before (`S`) — Firestore's 1MiB
+    // document cap is far beyond a personal/friends-scale history, so this stays a single doc
+    // rather than splitting foodLog/workouts into subcollections.
     async pushState() {
-      if (!get().user) return
+      const user = get().user
+      if (!user) return
       clearTimeout(pushTm)
-      try { await api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) }); localStorage.removeItem('gym_dirty') }
+      try { await setDoc(doc(db, 'users', user.id), get().S); localStorage.removeItem('gym_dirty') }
       catch (e) { localStorage.setItem('gym_dirty', '1') }
     },
     async pullState() {
+      const user = get().user
+      if (!user) return
       try {
-        const { state } = await api('/api/data')
+        const snap = await getDoc(doc(db, 'users', user.id))
+        const state = snap.exists() ? snap.data() : null
         const S = get().S
         const dirty = localStorage.getItem('gym_dirty') === '1'
         if (state && (!hasData(S) || ((state._ts || 0) >= (S._ts || 0) && !dirty))) {
@@ -122,18 +135,8 @@ export const useStore = create((set, get) => {
     },
 
     async signOut() {
-      try { await get().pushState(); await api('/api/logout', { method: 'POST', body: '{}' }) } catch (e) { /* */ }
-      clearLocalSession()
-    },
-
-    // "Sign out everywhere": the server bumps this profile's session version, which kills every
-    // session it has on any device — this browser included, so the app has to end up exactly
-    // where a normal signOut leaves it. Unlike signOut the request is NOT swallowed: if it fails
-    // the sessions elsewhere are all still valid, and wiping this device's copy of the data
-    // would sign the user out of the one place the bump didn't reach. Caller reports the error.
-    async signOutAll() {
-      await get().pushState()   // never throws — stores gym_dirty and moves on when offline
-      await api('/api/logout/all', { method: 'POST', body: '{}' })
+      try { await get().pushState() } catch (e) { /* */ }
+      try { await fbSignOut(auth) } catch (e) { /* */ }
       clearLocalSession()
     },
 
@@ -145,9 +148,9 @@ export const useStore = create((set, get) => {
       persist(Object.assign(clone(DEF), buildDemoState()), false)
     },
 
-    // Boot: ask the server who we are, then pull.
+    // Boot: ask Firebase who we are, then pull.
     async boot() {
-      // Mobile build: no backend either — restore from the file mirror (the durable copy;
+      // Mobile build: no Firebase project either — restore from the file mirror (the durable copy;
       // localStorage may have been evicted since the last run) and go straight in.
       if (MOBILE) {
         const saved = await nativeLoad()
@@ -173,18 +176,22 @@ export const useStore = create((set, get) => {
         return
       }
       try {
-        const me = await api('/api/me')
-        get().setUser(me.user)
-        await get().pullState()
-        // Re-stamp the reminder's timezone on every load — keeps it correct if you're travelling,
-        // without needing to revisit Settings.
-        const tz = localTZ()
-        if (get().S.reminder?.on && get().S.reminder.tz !== tz) {
-          get().update(s => { s.reminder = { ...s.reminder, tz } })
-        }
-      } catch (e) {
-        if (e.status === 401) get().setUser(null)
-      }
+        // Firebase persists the session itself (IndexedDB) — this resolves once with whatever
+        // it already knows, replacing the old cookie-backed /api/me check.
+        const fbUser = await new Promise(resolve => {
+          const unsub = onAuthStateChanged(auth, u => { unsub(); resolve(u) })
+        })
+        if (fbUser) {
+          get().setUser({ id: fbUser.uid, name: fbUser.email })
+          await get().pullState()
+          // Re-stamp the reminder's timezone on every load — keeps it correct if you're
+          // travelling, without needing to revisit Settings.
+          const tz = localTZ()
+          if (get().S.reminder?.on && get().S.reminder.tz !== tz) {
+            get().update(s => { s.reminder = { ...s.reminder, tz } })
+          }
+        } else get().setUser(null)
+      } catch (e) { /* offline — keep whatever was restored from localStorage */ }
       set({ ready: true })
     }
   }

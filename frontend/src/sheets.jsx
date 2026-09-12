@@ -11,7 +11,8 @@ import { starterRoutines } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
-import { Button, Slider, Switch, Segmented, SelectRow, Row } from './components/ui.jsx'
+import { Button, Slider, Switch, Segmented, SelectRow, Row, SearchField } from './components/ui.jsx'
+import { foodEntriesFor } from './lib/nutrition.js'
 import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
@@ -250,6 +251,154 @@ function GoalSheet({ close }) {
   </>
 }
 export const goalSheet = () => ui().openSheet(close => <GoalSheet close={close} />)
+
+/* ============================ calorie / macro tracking ============================ */
+// Open Food Facts: free, no API key, CORS-enabled — called straight from the client. Search
+// results carry per-100g values; the app treats what comes back as a starting point, not a
+// silent write — everything lands in editable fields before it's saved.
+async function searchFood(q) {
+  const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' +
+    encodeURIComponent(q) + '&search_simple=1&action=process&json=1&page_size=15'
+  const r = await fetch(url)
+  if (!r.ok) throw new Error('search failed')
+  const data = await r.json()
+  return (data.products || [])
+    .filter(p => p.product_name && p.nutriments && p.nutriments['energy-kcal_100g'] != null)
+    .map(p => ({
+      name: p.product_name,
+      kcal: Math.round(p.nutriments['energy-kcal_100g'] || 0),
+      protein: Math.round(p.nutriments.proteins_100g || 0),
+      carbs: Math.round(p.nutriments.carbohydrates_100g || 0),
+      fat: Math.round(p.nutriments.fat_100g || 0)
+    }))
+}
+
+function FoodSearch({ onPick }) {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(false)
+  const go = async () => {
+    if (!q.trim()) return
+    setBusy(true); setErr(false)
+    try { setResults(await searchFood(q.trim())) }
+    catch (e) { setErr(true); setResults([]) }
+    setBusy(false)
+  }
+  return <>
+    <div className="row" style={{ gap: 8 }}>
+      <div style={{ flex: 1 }}>
+        <SearchField value={q} onChange={e => setQ(e.target.value)} onClear={() => { setQ(''); setResults([]) }}
+          placeholder={t('Search a food (per 100g)')} onKeyDown={e => e.key === 'Enter' && go()} />
+      </div>
+      <Button onClick={go} disabled={busy}>{t('Search')}</Button>
+    </div>
+    {err && <div className="small dim" style={{ marginTop: 8 }}>{t('Search failed — check your connection, or enter it manually.')}</div>}
+    {results.length > 0 && <div className="list" style={{ gap: 0, marginTop: 10 }}>
+      {results.map((f, i) => (
+        <button key={i} className="lrow tap" onClick={() => onPick(f)}>
+          <span className="lrow-m"><span className="lrow-t">{f.name}</span>
+            <span className="lrow-s">{f.kcal} kcal · {f.protein}P {f.carbs}C {f.fat}F {t('per 100g')}</span></span>
+          <Icon name="plus" className="lrow-c" />
+        </button>
+      ))}
+    </div>}
+  </>
+}
+
+function FoodSheet({ close }) {
+  const st = useStore(s => s.S)
+  const [mode, setMode] = useState('search')
+  const [name, setName] = useState('')
+  const [kcal, setKcal] = useState(null)
+  const [protein, setProtein] = useState(null)
+  const [carbs, setCarbs] = useState(null)
+  const [fat, setFat] = useState(null)
+  const pick = f => { setName(f.name); setKcal(f.kcal); setProtein(f.protein); setCarbs(f.carbs); setFat(f.fat); setMode('manual') }
+  const save = () => {
+    const n = name.trim()
+    if (!n) { toast(t('Enter a name')); return }
+    if (!kcal) { toast(t('Enter calories')); return }
+    update(s => {
+      s.foodLog.push({ d: todayISO(), name: n, kcal: kcal || 0, protein: protein || 0, carbs: carbs || 0, fat: fat || 0, t: Date.now() })
+    })
+    close()
+    toast(t('{0} logged', n))
+  }
+  const today = foodEntriesFor(st, todayISO())
+  const delEntry = t0 => update(s => { s.foodLog = s.foodLog.filter(e => e.t !== t0) })
+  return <>
+    <h3>{t('Log food')}</h3>
+    <Segmented className="seg-range" value={mode} onChange={setMode}
+      options={[{ value: 'search', label: t('Search') }, { value: 'manual', label: t('Manual') }]} />
+    {mode === 'search' && <div style={{ marginTop: 10 }}><FoodSearch onPick={pick} /></div>}
+    {mode === 'manual' && <div style={{ marginTop: 10 }}>
+      <input className="input" placeholder={t('Food name')} maxLength={60} value={name} onChange={e => setName(e.target.value)} />
+      <div style={{ height: 10 }} />
+      <div className="row" style={{ gap: 8 }}>
+        <Stepper label={t('Kcal')} value={kcal} onChange={setKcal} step={10} decimal={false} />
+      </div>
+      <div style={{ height: 8 }} />
+      <div className="row" style={{ gap: 8 }}>
+        <Stepper label={t('Protein (g)')} value={protein} onChange={setProtein} step={5} decimal={false} />
+      </div>
+      <div style={{ height: 8 }} />
+      <div className="row" style={{ gap: 8 }}>
+        <Stepper label={t('Carbs (g)')} value={carbs} onChange={setCarbs} step={5} decimal={false} />
+      </div>
+      <div style={{ height: 8 }} />
+      <div className="row" style={{ gap: 8 }}>
+        <Stepper label={t('Fat (g)')} value={fat} onChange={setFat} step={5} decimal={false} />
+      </div>
+      <div style={{ height: 14 }} />
+      <Button variant="primary" onClick={save}>{t('Save')}</Button>
+    </div>}
+    {today.length > 0 && <>
+      <h4 className="sec">{t('Logged today')}</h4>
+      <div className="list" style={{ gap: 0 }}>
+        {today.map(e => <div key={e.t} className="row between" style={{ padding: '9px 2px', borderBottom: '1px solid var(--sep)' }}>
+          <span className="small">{e.name} <span className="dim">· {e.kcal} kcal</span></span>
+          <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, fontSize: 15, color: 'var(--red)' }} onClick={() => delEntry(e.t)} aria-label="delete"><Icon name="trash" /></button>
+        </div>)}
+      </div>
+    </>}
+  </>
+}
+export const foodSheet = () => ui().openSheet(close => <FoodSheet close={close} />)
+
+function NutritionGoalSheet({ close }) {
+  const st = S()
+  const [kcal, setKcal] = useState(st.targetKcal)
+  const [protein, setProtein] = useState(st.targetProtein)
+  const [carbs, setCarbs] = useState(st.targetCarbs)
+  const [fat, setFat] = useState(st.targetFat)
+  const save = () => {
+    update(s => { s.targetKcal = kcal || null; s.targetProtein = protein || null; s.targetCarbs = carbs || null; s.targetFat = fat || null })
+    close()
+    toast(t('Nutrition target saved'))
+  }
+  const clear = () => {
+    update(s => { s.targetKcal = null; s.targetProtein = null; s.targetCarbs = null; s.targetFat = null }); close()
+    toast(t('Target removed'))
+  }
+  return <>
+    <h3>{t('Daily target')}</h3>
+    <div className="muted small" style={{ marginBottom: 14 }}>{t('Shown as progress against what you log each day. Leave a field blank to skip it.')}</div>
+    <div className="row" style={{ gap: 8 }}><Stepper label={t('Kcal')} value={kcal} onChange={setKcal} step={50} decimal={false} /></div>
+    <div style={{ height: 8 }} />
+    <div className="row" style={{ gap: 8 }}><Stepper label={t('Protein (g)')} value={protein} onChange={setProtein} step={5} decimal={false} /></div>
+    <div style={{ height: 8 }} />
+    <div className="row" style={{ gap: 8 }}><Stepper label={t('Carbs (g)')} value={carbs} onChange={setCarbs} step={5} decimal={false} /></div>
+    <div style={{ height: 8 }} />
+    <div className="row" style={{ gap: 8 }}><Stepper label={t('Fat (g)')} value={fat} onChange={setFat} step={5} decimal={false} /></div>
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={save}>{t('Save target')}</Button>
+    {(st.targetKcal || st.targetProtein || st.targetCarbs || st.targetFat) && <>
+      <div style={{ height: 8 }} /><Button variant="danger" onClick={clear}>{t('Remove target')}</Button>
+    </>}
+  </>
+}
+export const nutritionGoalSheet = () => ui().openSheet(close => <NutritionGoalSheet close={close} />)
 
 /* ============================ exercise detail ============================ */
 // Estimated 1RM for one exercise (issue #18): what the log already implies, plus a calculator

@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutine, effectiveRoutineId, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
+import { todayTotals } from '../lib/nutrition.js'
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
-import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor } from '../sheets.jsx'
+import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor, foodSheet, nutritionGoalSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
@@ -23,6 +24,7 @@ export default function Home() {
   const bw = lastBW(S)
   const prevBW = S.bodyweight.length > 1 ? S.bodyweight[S.bodyweight.length - 2] : null
   const delta = bw && prevBW ? bw.w - prevBW.w : null
+  const food = { today: todayTotals(S), hasTarget: !!(S.targetKcal || S.targetProtein || S.targetCarbs || S.targetFat) }
 
   const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + weekOffset * 7)
   const doneDays = new Set(S.workouts.map(w => w.d))
@@ -114,6 +116,25 @@ export default function Home() {
         )}
         <div className="chart" style={{ marginTop: 8 }}><LineChart points={bwPoints} h={130} unit={S.unit} goal={S.targetW} /></div>
       </> : <div className="muted small">{t("No entries yet — log your weight to start the curve. It's also asked before every workout.")}</div>}
+    </div>
+
+    <div className="card">
+      <div className="row between" style={{ marginBottom: 6 }}>
+        <h2 style={{ margin: 0 }}>{t('Nutrition')}</h2>
+        <div className="row" style={{ gap: 8 }}>
+          <Button size="sm" icon="target" style={food.hasTarget ? { color: 'var(--yellow)' } : undefined} onClick={nutritionGoalSheet}>{t('Target')}</Button>
+          <Button size="sm" icon="plus" onClick={foodSheet}>{t('Log')}</Button>
+        </div>
+      </div>
+      {food.today.kcal > 0 || food.hasTarget ? <>
+        <div className="row" style={{ gap: 8, alignItems: 'baseline' }}>
+          <div className="big">{fmtNum(food.today.kcal)} <span className="muted" style={{ fontSize: '1rem' }}>kcal</span></div>
+          {S.targetKcal && <span className="dim small" style={{ marginLeft: 'auto' }}>{t('of {0}', fmtNum(S.targetKcal))}</span>}
+        </div>
+        <div className="small muted" style={{ marginTop: 4 }}>
+          {fmtNum(food.today.protein)}{t('g protein')} · {fmtNum(food.today.carbs)}{t('g carbs')} · {fmtNum(food.today.fat)}{t('g fat')}
+        </div>
+      </> : <div className="muted small">{t('Nothing logged today — search a food or add it manually.')}</div>}
     </div>
 
     <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>

@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // One document per signed-in user, holding their whole app state (routines, workouts,
+    // body weight, food log, settings) — the same JSON blob the app has always kept locally.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

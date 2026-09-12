@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { EXIDX } from '../lib/exercises.js'
 import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
+import { kcalSeries } from '../lib/nutrition.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor } from '../sheets.jsx'
+import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor, foodSheet, nutritionGoalSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import Icon from '../components/Icon.jsx'
@@ -129,6 +130,26 @@ function EffortCard({ S }) {
   </div>
 }
 
+// Daily kcal logged over time, with the target (if any) drawn as a line — same shape as the
+// body-weight chart, just for S.foodLog instead of S.bodyweight.
+function NutritionCard({ S }) {
+  const [range, setRange] = useState(30)
+  const now = Date.now()
+  const series = kcalSeries(S).filter(p => range === 0 || p.t > now - range * 86400000)
+  return <div className="card">
+    <div className="row between" style={{ marginBottom: 8 }}>
+      <h2 style={{ margin: 0 }}>{t('Nutrition')}</h2>
+      <div className="row" style={{ gap: 8 }}>
+        <Button size="sm" icon="target" onClick={nutritionGoalSheet}>{S.targetKcal ? fmtNum(S.targetKcal) : t('Target')}</Button>
+        <Button size="sm" icon="plus" onClick={foodSheet}>{t('Log')}</Button>
+      </div>
+    </div>
+    <Segmented className="seg-range" value={range} onChange={setRange}
+      options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 0, label: t('All') }]} />
+    <div className="chart"><LineChart points={series} h={160} unit="kcal" goal={S.targetKcal} /></div>
+  </div>
+}
+
 // Stats = the analytics hub: all charts, progress and history live here.
 export default function Stats() {
   const nav = useNavigate()
@@ -212,6 +233,7 @@ export default function Stats() {
 
     {S.workouts.length > 0 && <MuscleBalance S={S} />}
     {anyEffort && <EffortCard S={S} />}
+    {(S.foodLog.length > 0 || S.targetKcal) && <NutritionCard S={S} />}
 
     <div className="cols">
       <div className="card">
